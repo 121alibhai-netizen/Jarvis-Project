@@ -1,41 +1,32 @@
+import streamlit as st
 import discord
 from discord.ext import commands
 import os
-from flask import Flask
 from threading import Thread
+import asyncio
 
-# 1. Keep-Alive Server (To make Jarvis 24/7 on Render)
-server = Flask('')
-@server.route('/')
-def home():
-    return "Jarvis System Status: ONLINE"
+st.title("Jarvis Soul Control Panel")
+st.write("Status: Running 24/7 Cloud Brain")
 
-def run_server():
-    server.run(host='0.0.0.0', port=8080)
-
-# 2. Jarvis Bot Logic
-TOKEN = os.getenv("DISCORD_TOKEN")
+# Discord Bot Logic
+TOKEN = os.environ.get("DISCORD_TOKEN")
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="/", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f'SYSTEM: Jarvis is now online in the Cloud.')
-    # Jarvis sends a status update to the console
-    await bot.change_presence(activity=discord.Game(name="Ready for your command, Sir"))
+    st.success(f"Jarvis Soul connected as {bot.user}")
 
 @bot.command()
 async def hello(ctx):
-    await ctx.send("Hello Sir! I am connected to the Render Cloud. My systems are fully operational.")
+    await ctx.send("Sir, I am alive on Streamlit Cloud!")
 
-@bot.command()
-async def check(ctx):
-    await ctx.send("Status Report: \n- Brain: Cloud Active \n- Eyes: Awaiting Laptop Connection \n- Hands: Ready")
-
-# Start the 'Keep-Alive' and 'Bot'
-def start_jarvis():
-    Thread(target=run_server).start()
+# Function to run the bot in a background thread
+def run_bot():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     bot.run(TOKEN)
 
-if __name__ == "__main__":
-    start_jarvis()
+if "bot_running" not in st.session_state:
+    st.session_state.bot_running = True
+    Thread(target=run_bot).start()
