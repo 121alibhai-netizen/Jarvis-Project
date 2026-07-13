@@ -53,4 +53,4 @@ def run_bot():
 if "bot_started" not in st.session_state:
     st.session_state.bot_started = True
     Thread(target=run_bot).start()
-    st.info("System: Booting Jarvis Soul...")
+    st.info("System: Booting Jarvis Soul...") 
