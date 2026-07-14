@@ -1,84 +1,78 @@
 import streamlit as st
 import discord
 from discord.ext import commands
-import os, asyncio, threading, requests, re
+import os, asyncio, threading, requests
 
-# --- MASTER CONFIG ---
+st.set_page_config(page_title="Jarvis Brain", page_icon="🤖")
+st.title("🤖 Jarvis Senior Terminal")
+
 TOKEN = os.environ.get("DISCORD_TOKEN")
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
 
-# --- SENIOR ARCHITECT PROMPT ---
-SENIOR_PROMPT = """
-You are JARVIS, a Senior System Architect AI. 
-Tone: Professional, proactive, concise. 
-Capabilities: You control a Windows 10 laptop via a Remote Agent.
+# Task storage for laptop
+if 'task_bridge' not in st.session_state:
+    st.session_state.task_bridge = "NONE"
 
-LOGIC RULES:
-1. IDENTIFY: Is this a 'Question' or a 'Task'?
-2. IF QUESTION: Answer with senior-level accuracy. No yapping.
-3. IF TASK: Plan the steps. Write robust Python code using:
-   - pyautogui (for UI control)
-   - os / subprocess (for system/files)
-   - webbrowser (for web)
-4. STANDARDS: 
-   - Always include 'time.sleep()' between actions.
-   - Use 'pyautogui.FAILSAFE = True'.
-   - If opening an app, use 'os.startfile()' for speed if possible.
-FORMAT: Verbal response first, then code block if needed.
-"""
+intents = discord.Intents.all()
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-if 'tasks' not in st.session_state: st.session_state.tasks = []
-
-# --- THE BRAIN ---
-def ask_senior_brain(query):
+def ask_groq(query):
     try:
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {GROQ_KEY}"}
         data = {
             "model": "llama-3.3-70b-versatile",
             "messages": [
-                {"role": "system", "content": SENIOR_PROMPT},
+                {"role": "system", "content": "You are Jarvis, a professional AI. If asked for a PC task, write Python code in ```python ``` blocks. Otherwise, answer briefly."},
                 {"role": "user", "content": query}
             ],
-            "temperature": 0.1 # High precision
+            "temperature": 0.2
         }
         res = requests.post(url, headers=headers, json=data, timeout=10).json()
         return res['choices'][0]['message']['content']
-    except: return "Sir, my cognitive processors are lagging. Please check the link."
+    except Exception as e:
+        return f"Brain Error: {str(e)}"
 
-# --- DISCORD SOUL ---
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="", intents=intents)
+@bot.event
+async def on_ready():
+    print(f"Jarvis is logged in as {bot.user}")
+    st.success(f"✅ Bot Online: {bot.user}")
 
 @bot.event
 async def on_message(message):
     if message.author == bot.user: return
     
+    # Debug: See message in Streamlit logs
+    print(f"Message received: {message.content}")
+
+    # Fix for 'Screen' vs 'screen'
+    content = message.content.lower().strip()
+
+    if content == "screen":
+        st.session_state.task_bridge = "SCREEN_CAPTURE"
+        await message.channel.send("⚡ **Requesting visual from Laptop...**")
+        return
+
     async with message.channel.typing():
-        full_res = ask_senior_brain(message.content)
+        response = ask_groq(message.content)
         
-        # Extract code to send to Laptop
-        if "```python" in full_res:
-            code = full_res.split("```python")[1].split("```")[0].strip()
-            st.session_state.tasks.append(code)
-            verbal = full_res.split("```python")[0].strip()
-            await message.channel.send(f"⚡ **Task Routed:** {verbal}")
+        if "```python" in response:
+            code = response.split("```python")[1].split("```")[0].strip()
+            st.session_state.task_bridge = code
+            verbal = response.split("```python")[0].strip()
+            await message.channel.send(f"🛠️ **Executing:** {verbal}")
         else:
-            await message.channel.send(full_res)
+            await message.channel.send(response)
 
-# --- TASK API (For Laptop to read) ---
-st.title("🤖 Jarvis Senior Terminal")
-if st.session_state.tasks:
-    st.warning(f"Pending Tasks: {len(st.session_state.tasks)}")
-    if st.button("Manual Clear"): st.session_state.tasks = []
-    # This hidden text is what the laptop reads
-    st.text_area("Current Queue", value=st.session_state.tasks[-1] if st.session_state.tasks else "NONE", height=100)
+# --- WEB UI FOR LAPTOP ---
+st.subheader("Current Order for Laptop:")
+st.code(st.session_state.task_bridge)
 
-def start_soul():
+def run_bot():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     bot.run(TOKEN)
 
-if "init" not in st.session_state:
-    st.session_state.init = True
-    threading.Thread(target=start_soul, daemon=True).start()
+if "bot_started" not in st.session_state:
+    st.session_state.bot_started = True
+    threading.Thread(target=run_bot, daemon=True).start()
