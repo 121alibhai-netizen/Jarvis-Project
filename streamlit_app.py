@@ -3,56 +3,60 @@ import discord
 from discord.ext import commands
 import os, asyncio, threading, requests
 
-st.title("🤖 Jarvis Senior Terminal")
-
+# --- BRAIN CONFIG ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
 
-if 'task_bridge' not in st.session_state: st.session_state.task_bridge = "NONE"
+if 'task' not in st.session_state: st.session_state.task = "NONE"
 
-def ask_groq(query):
+# --- THE SECRET API FOR LAPTOP ---
+# Agar URL ke aakhir mein ?get_task=true ho toh sirf code dikhao
+query_params = st.query_params
+if query_params.get("get_task") == "true":
+    st.write(st.session_state.task)
+    st.stop() # Baki page load mat karo
+
+# --- AI LOGIC ---
+def ask_brain(query):
     try:
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {GROQ_KEY}"}
-        data = {
-            "model": "llama-3.3-70b-versatile",
-            "messages": [
-                {"role": "system", "content": "You are JARVIS. For PC tasks, use ```python ``` blocks with pyautogui. For info, be brief."},
-                {"role": "user", "content": query}
-            ],
-            "temperature": 0.1
-        }
-        res = requests.post(url, headers=headers, json=data).json()
+        data = {"model": "llama-3.3-70b-versatile", "messages": [{"role": "system", "content": "You are JARVIS. For tasks, use ```python ``` blocks."}, {"role": "user", "content": query}]}
+        res = requests.post(url, headers=headers, json=data, timeout=10).json()
         return res['choices'][0]['message']['content']
-    except: return "Sir, connection error."
+    except: return "Connection error, Sir."
 
+# --- DISCORD ---
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="", intents=intents)
 
 @bot.event
 async def on_message(message):
     if message.author == bot.user: return
-    
     msg = message.content.lower().strip()
-    
-    # Direct Screenshot Command
-    if msg == "screen" or msg == "screenshot":
-        st.session_state.task_bridge = "SCREEN_CMD"
-        await message.channel.send("📸 **Capturing laptop screen for you, Sir...**")
+
+    if msg == "screen":
+        st.session_state.task = "SCREEN_CMD"
+        await message.channel.send("📸 **Capturing screen for you, Sir...**")
         return
 
     async with message.channel.typing():
-        response = ask_groq(message.content)
-        if "```python" in response:
-            code = response.split("```python")[1].split("```")[0].strip()
-            st.session_state.task_bridge = code
-            await message.channel.send(f"🛠️ {response.split('```python')[0]}")
+        res = ask_brain(message.content)
+        if "```python" in res:
+            st.session_state.task = res.split("```python")[1].split("```")[0].strip()
+            await message.channel.send(f"🛠️ {res.split('```python')[0]}")
         else:
-            await message.channel.send(response)
+            await message.channel.send(res)
 
-st.code(st.session_state.task_bridge)
+# --- UI ---
+st.title("🤖 Jarvis Senior Terminal")
+st.subheader("Current Order:")
+st.code(st.session_state.task)
 
-# Double reply fix: check if bot is already in memory
-if "bot" not in st.session_state:
-    st.session_state.bot = True
+if st.button("Reset"):
+    st.session_state.task = "NONE"
+    st.rerun()
+
+if "started" not in st.session_state:
+    st.session_state.started = True
     threading.Thread(target=lambda: bot.run(TOKEN), daemon=True).start()
