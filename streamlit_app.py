@@ -3,60 +3,68 @@ import discord
 from discord.ext import commands
 import os, asyncio, threading, requests
 
-# --- BRAIN CONFIG ---
+# --- UI Setup ---
+st.set_page_config(page_title="Jarvis Brain", page_icon="🤖")
+st.title("🤖 Jarvis 24/7 Online Soul")
+
+# --- Secrets Check ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
 
-if 'task' not in st.session_state: st.session_state.task = "NONE"
+if not TOKEN or not GROQ_KEY:
+    st.error("Secrets missing! Please add DISCORD_TOKEN and GROQ_API_KEY.")
+    st.stop()
 
-# --- THE SECRET API FOR LAPTOP ---
-# Agar URL ke aakhir mein ?get_task=true ho toh sirf code dikhao
-query_params = st.query_params
-if query_params.get("get_task") == "true":
-    st.write(st.session_state.task)
-    st.stop() # Baki page load mat karo
-
-# --- AI LOGIC ---
-def ask_brain(query):
+# --- Jarvis Brain Logic ---
+def ask_groq(query):
     try:
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {GROQ_KEY}"}
-        data = {"model": "llama-3.3-70b-versatile", "messages": [{"role": "system", "content": "You are JARVIS. For tasks, use ```python ``` blocks."}, {"role": "user", "content": query}]}
+        data = {
+            "model": "llama-3.3-70b-versatile",
+            "messages": [
+                {"role": "system", "content": "You are JARVIS, a highly advanced 24/7 AI. Be professional, smart, and concise like me."},
+                {"role": "user", "content": query}
+            ],
+            "temperature": 0.5
+        }
         res = requests.post(url, headers=headers, json=data, timeout=10).json()
         return res['choices'][0]['message']['content']
-    except: return "Connection error, Sir."
+    except Exception as e:
+        return f"Sir, I am facing a connection issue with my central core: {e}"
 
-# --- DISCORD ---
+# --- Discord Bot Setup ---
+if "bot_instance" not in st.session_state:
+    st.session_state.bot_instance = None
+
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="", intents=intents)
 
 @bot.event
+async def on_ready():
+    print(f"Jarvis Soul is online as {bot.user}")
+    st.success(f"✅ Soul is Active: {bot.user}")
+
+@bot.event
 async def on_message(message):
     if message.author == bot.user: return
-    msg = message.content.lower().strip()
-
-    if msg == "screen":
-        st.session_state.task = "SCREEN_CMD"
-        await message.channel.send("📸 **Capturing screen for you, Sir...**")
-        return
-
+    
+    # Simple reply logic (No double replies)
     async with message.channel.typing():
-        res = ask_brain(message.content)
-        if "```python" in res:
-            st.session_state.task = res.split("```python")[1].split("```")[0].strip()
-            await message.channel.send(f"🛠️ {res.split('```python')[0]}")
-        else:
-            await message.channel.send(res)
+        response = ask_groq(message.content)
+        await message.channel.send(response)
 
-# --- UI ---
-st.title("🤖 Jarvis Senior Terminal")
-st.subheader("Current Order:")
-st.code(st.session_state.task)
+# --- Background Runner ---
+def run_bot():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    bot.run(TOKEN)
 
-if st.button("Reset"):
-    st.session_state.task = "NONE"
-    st.rerun()
-
+# Is block ki wajah se 4x replies nahi aayengi
 if "started" not in st.session_state:
     st.session_state.started = True
-    threading.Thread(target=lambda: bot.run(TOKEN), daemon=True).start()
+    threading.Thread(target=run_bot, daemon=True).start()
+    st.info("System Booting... Please wait.")
+
+st.sidebar.write("System Status: 🟢 24/7 Awake")
+st.sidebar.info("This is the Cloud Brain. It works even if your laptop is OFF.")
