@@ -1,87 +1,88 @@
 import streamlit as st
 import discord
 from discord.ext import commands
-import os, asyncio, threading, requests
+import os, asyncio, threading, requests, datetime
 
-st.set_page_config(page_title="Jarvis Senior Terminal", page_icon="🤖")
-st.title("🤖 Jarvis Master Soul")
-
+# --- CONFIG ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
-CH_IDS = {
-    "temp": int(os.environ.get("TEMP_CH_ID")),
-    "build": int(os.environ.get("BUILD_CH_ID")),
-    "workflow": int(os.environ.get("WORKFLOW_CH_ID"))
-}
+TEMP_ID = int(os.environ.get("TEMP_CH_ID"))
+BUILD_ID = int(os.environ.get("BUILD_CH_ID"))
+WORKFLOW_ID = int(os.environ.get("WORKFLOW_CH_ID"))
 
-# Task Bridge
 if 'task' not in st.session_state: st.session_state.task = "NONE"
 
-# --- MEMORY RETRIEVAL ---
-async def get_all_memory(bot):
-    logs = "--- SYSTEM MEMORY START ---\n"
-    for name, cid in CH_IDS.items():
-        ch = bot.get_channel(cid)
-        if ch:
-            logs += f"\n[{name.upper()}]:\n"
-            async for m in ch.history(limit=15):
-                logs += f"{'Master' if not m.author.bot else 'Jarvis'}: {m.content}\n"
-    return logs
+# --- TASK API FOR LAPTOP ---
+query_params = st.query_params
+if query_params.get("get_task") == "true":
+    st.write(st.session_state.task)
+    st.stop()
 
-# --- BRAIN LOGIC ---
-def ask_brain(query, history):
+# --- AUTO-CLEAN LOGIC (7 Days) ---
+async def clean_old_memory(bot):
+    now = datetime.datetime.utcnow()
+    for ch_id in [TEMP_ID, BUILD_ID]:
+        channel = bot.get_channel(ch_id)
+        if channel:
+            # 7 din purane messages delete karna
+            deleted = await channel.purge(before=now - datetime.timedelta(days=7))
+            if len(deleted) > 0:
+                print(f"Cleaned {len(deleted)} old logs from {channel.name}")
+
+# --- BRAIN WITH TRIPLE MEMORY ---
+async def get_memory_context(bot):
+    context = ""
+    for ch_id in [TEMP_ID, BUILD_ID, WORKFLOW_ID]:
+        ch = bot.get_channel(ch_id)
+        if ch:
+            context += f"\n[{ch.name.upper()}]:\n"
+            async for m in ch.history(limit=10):
+                context += f"{'User' if not m.author.bot else 'Jarvis'}: {m.content}\n"
+    return context
+
+def ask_brain(query, context):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {GROQ_KEY}"}
-    system_prompt = f"""You are JARVIS. Use the memory below to remember EVERYTHING about Muhammad Ali. 
-    If his name is in the history, address him as 'Sir' or 'Ali Bhai'.
-    Memory Banks: {history}
-    Rules: 1. PC tasks = python code in ```python ``` blocks. 2. Chat = professional & brief. 3. 'save' = start with 'SAVING:'."""
-    
-    data = {"model": "llama-3.3-70b-versatile", "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": query}], "temperature": 0.2}
-    try:
-        res = requests.post(url, headers=headers, json=data, timeout=10).json()
-        return res['choices'][0]['message']['content']
-    except: return "Sir, connection to core brain is flickering."
+    prompt = f"You are JARVIS. Use this memory: {context}. Rules: 1. PC tasks in ```python ``` blocks. 2. If saving info, start with 'PERMANENT_LOG:'"
+    data = {"model": "llama-3.3-70b-versatile", "messages": [{"role": "system", "content": prompt}, {"role": "user", "content": query}]}
+    res = requests.post(url, headers=headers, json=data).json()
+    return res['choices'][0]['message']['content']
 
-# --- DISCORD SETUP ---
-if "bot_instance" not in st.session_state: st.session_state.bot_instance = None
-
+# --- DISCORD SOUL ---
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="", intents=intents)
+
+@bot.event
+async def on_ready():
+    await clean_old_memory(bot) # Start hotay hi safayi
+    st.success(f"Jarvis Soul Active: {bot.user}")
 
 @bot.event
 async def on_message(message):
     if message.author == bot.user: return
     
-    msg_clean = message.content.lower().strip()
-    
-    if msg_clean == "screen":
-        st.session_state.task = "SCREEN_CMD"
-        await message.channel.send("📸 **Sir, capturing laptop screen now...**")
-        return
-
     async with message.channel.typing():
-        history = await get_all_memory(bot)
-        response = ask_brain(message.content, history)
+        context = await get_memory_context(bot)
+        response = ask_brain(message.content, context)
+
+        # 1. Permanent Memory Routing
+        if "PERMANENT_LOG:" in response:
+            wf_ch = bot.get_channel(WORKFLOW_ID)
+            await wf_ch.send(f"📂 **LOGGED:** {response.replace('PERMANENT_LOG:', '').strip()}")
+            await message.channel.send("✅ Sir, that info is now permanent in Workflow Memory.")
         
-        if "```python" in response:
+        # 2. Action Routing
+        elif "```python" in response:
             st.session_state.task = response.split("```python")[1].split("```")[0].strip()
             await message.channel.send(f"🛠️ {response.split('```python')[0]}")
+        
         else:
             await message.channel.send(response)
 
-# --- RUNNER (DOUBLE REPLY FIX) ---
-def run_bot():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    bot.run(TOKEN)
-
+# --- RUNNER ---
 if "started" not in st.session_state:
     st.session_state.started = True
-    threading.Thread(target=run_bot, daemon=True).start()
+    threading.Thread(target=lambda: bot.run(TOKEN), daemon=True).start()
 
-st.subheader("Current Order for Laptop:")
+st.title("🤖 Jarvis Senior Terminal")
 st.code(st.session_state.task)
-if st.button("Reset Bridge"): 
-    st.session_state.task = "NONE"
-    st.rerun()
