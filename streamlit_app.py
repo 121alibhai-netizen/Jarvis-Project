@@ -1,7 +1,7 @@
 import streamlit as st
 import discord
 from discord.ext import commands
-import os, asyncio, threading, requests
+import os, asyncio, threading,
 
 # --- UI Setup ---
 st.set_page_config(page_title="Jarvis Brain", page_icon="🤖")
