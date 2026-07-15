@@ -3,98 +3,73 @@ import discord
 from discord.ext import commands
 import os, asyncio, threading, requests
 
-# --- CONFIG ---
+# --- SENIOR CONFIG ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
+
+# Memory IDs
 CH_IDS = {
     "temp": int(os.environ.get("TEMP_CH_ID")),
-    "build": int(os.environ.get("BUILD_CH_ID")),
     "workflow": int(os.environ.get("WORKFLOW_CH_ID"))
 }
 
-# Instance Lock to prevent double replies
-if "bot_running" not in st.session_state:
-    st.session_state.bot_running = False
+# Laptop Task Bridge
+if 'task_bridge' not in st.session_state: st.session_state.task_bridge = "NONE"
 
-# --- THE MEMORY SCANNER ---
-async def gather_all_memories(bot):
-    full_context = "--- JARVIS MULTI-TIER MEMORY ---\n"
-    for name, ch_id in CH_IDS.items():
-        channel = bot.get_channel(ch_id)
-        if channel:
-            full_context += f"\n[{name.upper()} CHANNEL]:\n"
-            async for msg in channel.history(limit=10): # Last 10 msgs from each
-                sender = "User" if not msg.author.bot else "Jarvis"
-                full_context += f"{sender}: {msg.content}\n"
-    return full_context
+# --- SMART BRAIN WITH HISTORY ---
+async def get_history(bot):
+    memory = ""
+    for name, cid in CH_IDS.items():
+        ch = bot.get_channel(cid)
+        if ch:
+            async for m in ch.history(limit=10):
+                memory += f"{m.author.name}: {m.content}\n"
+    return memory
 
-# --- SENIOR BRAIN ---
-def ask_jarvis(query, memory):
+def ask_senior_brain(query, history):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {GROQ_KEY}"}
-    
-    system_msg = f"""
-    You are JARVIS. Senior Architect.
-    MEMORY ACCESS:
-    {memory}
-    
-    RULES:
-    1. Check all memory tiers before answering. 
-    2. If user says 'save' or 'remember', start response with 'MEM_SAVE:'.
-    3. If user says 'forget' or 'delete', start with 'MEM_DELETE:'.
-    4. Use professional language.
-    """
+    system_msg = f"You are JARVIS. Use this history to remember the user: {history}. If a task is for PC, write Python code in ```python ``` blocks."
     
     data = {
         "model": "llama-3.3-70b-versatile",
         "messages": [{"role": "system", "content": system_msg}, {"role": "user", "content": query}],
         "temperature": 0.2
     }
-    try:
-        res = requests.post(url, headers=headers, json=data).json()
-        return res['choices'][0]['message']['content']
-    except: return "Sir, memory sync failed."
+    res = requests.post(url, headers=headers, json=data, timeout=10).json()
+    return res['choices'][0]['message']['content']
 
 # --- DISCORD LOGIC ---
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="", intents=intents)
 
 @bot.event
 async def on_message(message):
     if message.author == bot.user: return
     
     async with message.channel.typing():
-        # 1. Scrape all 3 channels for memory
-        memory = await gather_all_memories(bot)
+        # Memory retrieval
+        history = await get_history(bot)
+        response = ask_senior_brain(message.content, history)
         
-        # 2. Get smart response
-        response = ask_jarvis(message.content, memory)
-        
-        # 3. Handle Memory Management
-        if response.startswith("MEM_SAVE:"):
-            wf_ch = bot.get_channel(CH_IDS["workflow"])
-            clean_info = response.replace("MEM_SAVE:", "").strip()
-            await wf_ch.send(f"📂 **PERMANENT LOG:** {clean_info}")
-            await message.channel.send("✅ Sir, that has been moved to your Permanent Workflow memory.")
-        
-        elif response.startswith("MEM_DELETE:"):
-            await message.channel.send("⚠️ Sir, please delete the specific message in the memory channel manually for safety.")
-        
+        # Check for Action Code
+        if "```python" in response:
+            code = response.split("```python")[1].split("```")[0].strip()
+            st.session_state.task_bridge = code # Bhej diya laptop ke liye
+            await message.channel.send(f"⚡ **Task Routed:** {response.split('```python')[0]}")
         else:
             await message.channel.send(response)
 
-# --- RUNNER ---
+# --- WEB UI FOR LAPTOP ---
+st.title("🤖 Jarvis Master Soul")
+st.subheader("Current Bridge Task:")
+st.code(st.session_state.task_bridge) # Laptop isay parhega
+
 def run_bot():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     bot.run(TOKEN)
 
-st.title("🤖 Jarvis Senior Terminal")
-if not st.session_state.bot_running:
-    st.session_state.bot_running = True
+if "started" not in st.session_state:
+    st.session_state.started = True
     threading.Thread(target=run_bot, daemon=True).start()
-    st.success("✅ Unified Memory Brain Active.")
-
-if st.sidebar.button("Hard Reset"):
-    st.session_state.bot_running = False
-    st.rerun()
