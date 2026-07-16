@@ -3,7 +3,14 @@ import discord
 from discord.ext import commands
 import os, asyncio, threading, requests, base64
 
-# --- SENIOR CONFIG ---
+# --- GLOBAL STORAGE (To prevent st.session_state crashes) ---
+# Ye variables background threads mein bhi kaam karenge
+if 'live_vision_data' not in globals():
+    global live_vision_data, current_task
+    live_vision_data = None
+    current_task = "NONE"
+
+# --- CONFIG ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
 CH_IDS = {
@@ -12,24 +19,20 @@ CH_IDS = {
     "build": int(os.environ.get("BUILD_CH_ID"))
 }
 
-# Persistent States (Cloud Memory)
-if 'live_vision' not in st.session_state: st.session_state.live_vision = None
-if 'task' not in st.session_state: st.session_state.task = "NONE"
-
 # --- THE GHOST EYES & TASK PORT ---
 params = st.query_params
 if params.get("stream") == "true":
     img_data = st.context.headers.get("image-content")
     if img_data:
-        st.session_state.live_vision = img_data
+        globals()['live_vision_data'] = img_data
         st.write("EYES_ACTIVE")
         st.stop()
 
 if params.get("get_task") == "true":
-    st.write(st.session_state.task)
+    st.write(globals()['current_task'])
     st.stop()
 
-# --- THE UNIFIED MEMORY ENGINE (3 Channels) ---
+# --- MEMORY ENGINE ---
 async def get_full_memory(bot):
     memory_logs = "--- SYSTEM MEMORY HISTORY ---\n"
     for label, cid in CH_IDS.items():
@@ -45,23 +48,18 @@ async def get_full_memory(bot):
 def ask_jarvis_ultra(query, history, img_b64):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {GROQ_KEY}"}
-    
-    # Vision model switch
     model = "llama-3.2-11b-vision-preview" if img_b64 else "llama-3.3-70b-versatile"
     
     system_prompt = f"""
-    You are J.A.R.V.I.S., the loyal AI of Muhammad Ali.
-    TONE: Professional, Senior Architect, Concise.
+    You are J.A.R.V.I.S., the loyal AI of Muhammad Ali. Professional, Senior Architect, Concise.
     MEMORY: {history}
     VISION: Describe exactly what you see. No boxing hallucinations.
     RULES: If task is for PC, write Python code in ```python ``` blocks using pyautogui.
     """
-
     messages = [{"role": "system", "content": system_prompt}]
     user_content = [{"type": "text", "text": query}]
     if img_b64:
         user_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}})
-    
     messages.append({"role": "user", "content": user_content})
 
     try:
@@ -77,12 +75,12 @@ bot = commands.Bot(command_prefix="", intents=intents)
 async def on_message(message):
     if message.author == bot.user: return
     async with message.channel.typing():
-        # Memory recall + Vision feed
+        # Memory recall + Vision from Global variable
         history = await get_full_memory(bot)
-        response = ask_jarvis_ultra(message.content, history, st.session_state.live_vision)
+        response = ask_jarvis_ultra(message.content, history, globals()['live_vision_data'])
         
         if "```python" in response:
-            st.session_state.task = response.split("```python")[1].split("```")[0].strip()
+            globals()['current_task'] = response.split("```python")[1].split("```")[0].strip()
         
         await message.channel.send(response.split("```python")[0].strip())
 
@@ -92,14 +90,21 @@ def run():
     asyncio.set_event_loop(loop)
     bot.run(TOKEN)
 
-if "init" not in st.session_state:
-    st.session_state.init = True
+if "bot_started" not in st.session_state:
+    st.session_state.bot_started = True
     threading.Thread(target=run, daemon=True).start()
 
 # --- WEB UI ---
 st.title("🤖 J.A.R.V.I.S. Ultra Terminal")
-if st.session_state.live_vision:
-    st.image(base64.b64decode(st.session_state.live_vision), caption="Live Visual Telemetry")
-    if st.button("Clear Visual Cache"): st.session_state.live_vision = None; st.rerun()
+st.write("System Status: **ACTIVE**")
+
+if globals()['live_vision_data']:
+    st.image(base64.b64decode(globals()['live_vision_data']), caption="Live Telemetry")
+    if st.button("Reset Vision"):
+        globals()['live_vision_data'] = None
+        st.rerun()
 else:
-    st.warning("Awaiting video feed from laptop body...")
+    st.info("Awaiting video feed from laptop body...")
+
+st.subheader("Current Task in Bridge:")
+st.code(globals()['current_task'])
