@@ -4,6 +4,10 @@ from discord.ext import commands
 import os, asyncio, threading
 # Hamare naye module se 'ask_groq' function import kar rahay hain
 from intelligence import ask_groq
+from vault import get_memories, auto_clean_temp
+# IDs define karna
+WF_ID = int(os.environ.get("WORKFLOW_CH_ID"))
+TEMP_ID = int(os.environ.get("TEMP_CH_ID"))
 
 st.set_page_config(page_title="Jarvis OS", page_icon="🤖")
 st.title("🤖 J.A.R.V.I.S. Modular OS")
