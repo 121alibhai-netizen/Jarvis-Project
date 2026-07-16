@@ -20,13 +20,25 @@ intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="", intents=intents)
 
 @bot.event
-async def on_message(message):
-    if message.author == bot.user: return
-    
-    async with message.channel.typing():
-        # Intelligence module se jawab mangna
-        response = ask_groq(message.content, GROQ_KEY)
-        await message.channel.send(response)
+async with message.channel.typing():
+        # 1. Fetch memory first
+        context = await get_memories(bot, WF_ID, TEMP_ID)
+        
+        # 2. Get AI response with memory
+        response = ask_groq(message.content, context, GROQ_KEY)
+        
+        # 3. Handle saving to Workflow channel
+        if response.startswith("MEM_SAVE:"):
+            wf_ch = bot.get_channel(WF_ID)
+            await wf_ch.send(response.replace("MEM_SAVE:", "").strip())
+            await message.channel.send("✅ Sir, that workflow has been saved to your Permanent Memory.")
+        else:
+            await message.channel.send(response)
+
+@bot.event
+async def on_ready():
+    await auto_clean_temp(bot, TEMP_ID) # 7 days cleanup
+    st.success("✅ Jarvis Soul & Vault Synced.")
 
 # Background Bot Runner
 def run_bot():
