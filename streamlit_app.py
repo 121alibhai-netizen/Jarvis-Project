@@ -1,7 +1,7 @@
 import streamlit as st
 import discord
 from discord.ext import commands
-import os, asyncio, threading, requests
+import os, asyncio, threading, requests, base64
 
 # --- SENIOR CONFIG ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -12,65 +12,77 @@ CH_IDS = {
     "build": int(os.environ.get("BUILD_CH_ID"))
 }
 
+# Persistent States
+if 'live_vision' not in st.session_state: st.session_state.live_vision = None
+if 'task' not in st.session_state: st.session_state.task = "NONE"
+
+# --- THE GHOST EYES & TASK PORT ---
+params = st.query_params
+if params.get("stream") == "true":
+    img_data = st.context.headers.get("x-image-data")
+    if img_data:
+        st.session_state.live_vision = img_data
+        st.write("EYES_RECIEVED")
+        st.stop()
+
+if params.get("get_task") == "true":
+    st.write(st.session_state.task)
+    st.stop()
+
 # --- THE UNIFIED MEMORY ENGINE ---
 async def get_jarvis_memory(bot):
     memory_data = ""
-    # Teeno channels se history uthana
     for label, cid in CH_IDS.items():
         channel = bot.get_channel(cid)
         if channel:
-            async for m in channel.history(limit=20):
+            async for m in channel.history(limit=15):
                 author = "Master" if not m.author.bot else "JARVIS"
                 memory_data += f"{author}: {m.content}\n"
     return memory_data
 
-def ask_jarvis(query, full_history):
+# --- BRAIN WITH VISION & MEMORY ---
+def ask_jarvis_pro(query, history, img_b64):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {GROQ_KEY}"}
     
-    # MASTER SYSTEM PROMPT (The "Soul")
-    # Is prompt se Jarvis mere jaisa behave karega
-    system_message = f"""
-    You are J.A.R.V.I.S., the loyal and highly advanced AI assistant to Muhammad Ali. 
-    1. Your tone: Professional, British, concise, and proactive.
-    2. Your Memory: You have access to all past conversations. You already know your Master's name is Muhammad Ali. 
-    3. Rules: NEVER mention 'checking logs' or 'accessing memory'. Just speak like a genius who remembers everything.
-    4. Task Logic: If the Master asks for a PC task (Notepad, Chrome, Screen), provide Python code in ```python ``` blocks.
+    # Use Vision model if screen is available, otherwise use 70B
+    model = "llama-3.2-11b-vision-preview" if img_b64 else "llama-3.3-70b-versatile"
     
-    PREVIOUS CONVERSATIONS FOR CONTEXT:
-    {full_history}
+    system_prompt = f"""
+    You are J.A.R.V.I.S., the loyal and highly advanced AI assistant to Muhammad Ali.
+    TONE: Professional, British, concise, and proactive.
+    MEMORY ACCESS: {history}
+    VISION: You are currently looking at the Master's laptop screen via a live stream.
+    RULES: 
+    1. Use memory to address the Master correctly.
+    2. If a task is for the PC, provide Python code in ```python ``` blocks.
+    3. Never mention 'accessing logs'. Just know everything.
     """
+
+    messages = [{"role": "system", "content": system_prompt}]
     
-    data = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": query}
-        ],
-        "temperature": 0.3
-    }
+    user_content = [{"type": "text", "text": query}]
+    if img_b64:
+        user_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}})
+    
+    messages.append({"role": "user", "content": user_content})
+
     try:
-        res = requests.post(url, headers=headers, json=data, timeout=12).json()
+        res = requests.post(url, headers=headers, json={"model": model, "messages": messages, "temperature": 0.2}).json()
         return res['choices'][0]['message']['content']
     except: return "Sir, I am having a moment of instability in my neural core."
 
 # --- DISCORD LOGIC ---
-if 'task' not in st.session_state: st.session_state.task = "NONE"
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="", intents=intents)
 
 @bot.event
 async def on_message(message):
     if message.author == bot.user: return
-    
     async with message.channel.typing():
-        # Memory recall in milliseconds
         history = await get_jarvis_memory(bot)
+        response = ask_jarvis_pro(message.content, history, st.session_state.live_vision)
         
-        # Brain processing
-        response = ask_jarvis(message.content, history)
-        
-        # Task check
         if "```python" in response:
             st.session_state.task = response.split("```python")[1].split("```")[0].strip()
             await message.channel.send(response.split("```python")[0].strip())
@@ -87,11 +99,6 @@ if "init" not in st.session_state:
     st.session_state.init = True
     threading.Thread(target=run, daemon=True).start()
 
-# Hidden API for Laptop Agent
-query_params = st.query_params
-if query_params.get("get_task") == "true":
-    st.write(st.session_state.task)
-    st.stop()
-
-st.title("🤖 J.A.R.V.I.S. Core")
-st.write("Current Bridge State:", st.session_state.task)
+st.title("🤖 J.A.R.V.I.S. Visual & Memory Core")
+if st.session_state.live_vision:
+    st.image(base64.b64decode(st.session_state.live_vision), caption="Live Telemetry")
