@@ -3,70 +3,74 @@ import discord
 from discord.ext import commands
 import os, asyncio, threading, requests, base64
 
-# --- GLOBAL ARCHITECTURE ---
-if 'jarvis_core' not in globals():
-    global live_frame, laptop_task
-    live_frame = None
-    laptop_task = "NONE"
+# --- GLOBAL CORE (Storage for Image Data) ---
+if 'visual_memory' not in globals():
+    global current_eyes, last_order
+    current_eyes = None
+    last_order = "NONE"
 
 TOKEN = os.environ.get("DISCORD_TOKEN")
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
 CH_IDS = {
     "temp": int(os.environ.get("TEMP_CH_ID")),
-    "build": int(os.environ.get("BUILD_CH_ID")),
-    "workflow": int(os.environ.get("WORKFLOW_CH_ID"))
+    "workflow": int(os.environ.get("WORKFLOW_CH_ID")),
+    "build": int(os.environ.get("BUILD_CH_ID"))
 }
 
-# --- TELEMETRY PORTS (High Frequency) ---
+# --- THE STARK TELEMETRY PORT ---
 params = st.query_params
 if params.get("stream") == "true":
-    img = st.context.headers.get("image-content")
-    if img: globals()['live_frame'] = img
-    st.stop()
+    # Laptop se aane wali asli photo ka data pakarna
+    raw_img = st.context.headers.get("x-image-data")
+    if raw_img:
+        globals()['current_eyes'] = raw_img
+        st.write("EYES_SYNCED")
+        st.stop()
 
 if params.get("get_task") == "true":
-    st.write(globals()['laptop_task'])
+    st.write(globals()['last_order'])
     st.stop()
 
-# --- MEMORY RETRIEVAL (The Vault) ---
-async def fetch_memory_tier(bot):
-    context = ""
-    for label, cid in CH_IDS.items():
-        channel = bot.get_channel(cid)
-        if channel:
-            context += f"\n[{label.upper()} MEMORY]:\n"
-            async for m in channel.history(limit=15):
-                author = "Master Ali" if not m.author.bot else "JARVIS"
-                context += f"{author}: {m.content}\n"
-    return context
-
-# --- BRAIN: LLAMA-3.2 VISION ENGINE ---
-def ask_jarvis_architect(query, history, img_b64):
+# --- BRAIN: MULTI-MODAL VISION ENGINE ---
+def ask_jarvis_vision(query, history, b64_image):
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_KEY}"}
+    headers = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
     
-    # Always use Vision Model for high-intelligence understanding
-    model = "llama-3.2-11b-vision-preview"
-
-    system_msg = f"""
-    You are J.A.R.V.I.S., a Senior System Architect AI. 
-    User: Muhammad Ali (Rahim Yar Khan, Pakistan).
-    PERSONALITY: Highly intelligent, concise, proactive, loyal. Like a human.
-    MEMORY ACCESS: {history}
-    VISION CAPABILITY: You are observing the Master's screen. Understand the GUI, code, and intent.
-    MANDATE: Analyze the provided screen and memory to give a direct, expert-level response. 
-    TASKS: PC control must be in ```python ``` blocks using pyautogui.
+    # System Instruction: Is se Jarvis mere jaisa behave karega
+    system_prompt = f"""
+    You are J.A.R.V.I.S., a Senior System Architect. 
+    Your Master is Muhammad Ali. 
+    VISION: You are looking at the Master's screen. analyze pixels directly. 
+    RULES: 
+    1. Do NOT guess. If you see code, analyze the code. If you see a browser, name the site.
+    2. Be concise, professional, and loyal. No filler talk.
+    3. Memory Access: {history}
+    4. For PC tasks, use ```python ``` blocks.
     """
-    
-    content = [{"type": "text", "text": query}]
-    if img_b64:
-        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}})
+
+    # Multi-modal Content structure
+    content_list = [{"type": "text", "text": query}]
+    if b64_image:
+        content_list.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}
+        })
+
+    payload = {
+        "model": "llama-3.2-11b-vision-preview", # Asli Vision Model
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": content_list}
+        ],
+        "temperature": 0.0, # Zero temperature = No Hallucination (Strict Facts)
+        "max_tokens": 500
+    }
 
     try:
-        data = {"model": model, "messages": [{"role": "system", "content": system_msg}, {"role": "user", "content": content}], "temperature": 0.0}
-        res = requests.post(url, headers=headers, json=data, timeout=15).json()
+        res = requests.post(url, headers=headers, json=payload, timeout=15).json()
         return res['choices'][0]['message']['content']
-    except: return "Sir, my visual uplink is encountering interference."
+    except Exception as e:
+        return f"Sir, my visual core is offline. Error: {e}"
 
 # --- DISCORD LOGIC ---
 intents = discord.Intents.all()
@@ -76,19 +80,29 @@ bot = commands.Bot(command_prefix="", intents=intents)
 async def on_message(message):
     if message.author == bot.user: return
     async with message.channel.typing():
-        history = await fetch_memory_tier(bot)
-        response = ask_jarvis_architect(message.content, history, globals()['live_frame'])
+        # Memory retrieval
+        history = ""
+        async for m in message.channel.history(limit=5):
+            history += f"{m.author.name}: {m.content}\n"
+            
+        # Analysis using raw photo and history
+        response = ask_jarvis_vision(message.content, history, globals()['current_eyes'])
         
         if "```python" in response:
-            globals()['laptop_task'] = response.split("```python")[1].split("```")[0].strip()
+            globals()['last_order'] = response.split("```python")[1].split("```")[0].strip()
         
         await message.channel.send(response.split("```python")[0].strip())
 
+def run():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    bot.run(TOKEN)
+
 if "init" not in st.session_state:
     st.session_state.init = True
-    threading.Thread(target=lambda: bot.run(TOKEN), daemon=True).start()
+    threading.Thread(target=run, daemon=True).start()
 
-# --- STARK INTERFACE ---
-st.title("🤖 JARVIS: MASTER BRAIN")
-if globals()['live_frame']:
-    st.image(base64.b64decode(globals()['live_frame']), caption="Live Satellite Feed")
+# --- HUD DISPLAY ---
+st.title("🤖 J.A.R.V.I.S. Visual Core")
+if globals()['current_eyes']:
+    st.image(base64.b64decode(globals()['current_eyes']), caption="Live Satellite Feed")
