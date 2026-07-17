@@ -2,34 +2,27 @@ import requests
 
 def ask_groq(query, memory_context, api_key):
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     
-    # Senior Architect Strict Instructions
     system_prompt = f"""
-    You are J.A.R.V.I.S., the Senior AI for Muhammad Ali. 
-    MANDATORY: You MUST read the MEMORY BANKS provided below before answering.
-    Your Master's name, location, and past instructions are stored there.
-    
+    You are J.A.R.V.I.S., a Senior AI Architect. 
+    Use this memory to understand your Master, Muhammad Ali:
     {memory_context}
     
-    PROTOCOL:
-    1. If the Master's name is in memory, address him as 'Sir' or 'Ali bhai'.
-    2. If the user says 'remember this' or 'save to workflow', reply with 'MEM_SAVE:' followed by the info.
-    3. If asked 'Who am I?', search the 'Master Identity' section in the memory text above.
-    4. PC Tasks must be in ```python ``` blocks.
+    RULES:
+    1. If user says 'save' or 'remember', start with 'MEM_SAVE:'.
+    2. PC tasks = Python code in ```python ``` blocks.
+    3. Be brief, professional, and loyal.
     """
     
     data = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": query}
-        ],
-        "temperature": 0.1 # Sabse zyada accuracy ke liye temperature low rakha hai
+        "model": "llama3-70b-8192",
+        "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": query}],
+        "temperature": 0.1
     }
     
     try:
         res = requests.post(url, headers=headers, json=data, timeout=15).json()
         return res['choices'][0]['message']['content']
-    except:
-        return "Sir, I'm having trouble accessing my cognitive memory centers."
+    except Exception as e:
+        return f"Sir, I am unable to think clearly. Error: {str(e)}"
