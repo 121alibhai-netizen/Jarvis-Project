@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 import os, asyncio, threading
 from intelligence import ask_groq
-from vault import get_memories, auto_clean_temp
+from vault import get_permanent_metadata, get_recent_chat
 
 # --- CONFIG ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -15,22 +15,24 @@ intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="", intents=intents)
 
 @bot.event
-async def on_ready():
-    await auto_clean_temp(bot, TEMP_ID)
-    st.success("✅ Jarvis Soul & 2-Tier Vault Synced.")
-
-@bot.event
 async def on_message(message):
     if message.author == bot.user: return
     
     async with message.channel.typing():
-        context = await get_memories(bot, WF_ID, TEMP_ID)
-        response = ask_groq(message.content, context, GROQ_KEY)
+        # 1. READ: Cloud se structured memory nikalna
+        metadata = await get_permanent_metadata(bot, WF_ID)
+        recent_chat = await get_recent_chat(bot, TEMP_ID)
+        full_context = metadata + recent_chat
         
-        if response.startswith("MEM_SAVE:"):
+        # 2. THINK: Brain ko history bhenjna
+        response = ask_groq(message.content, full_context, GROQ_KEY)
+        
+        # 3. SAVE: Agar info save karni ho
+        if response.startswith("UPDATE_MEMORY:"):
+            info_to_save = response.replace("UPDATE_MEMORY:", "").strip()
             wf_ch = bot.get_channel(WF_ID)
-            await wf_ch.send(f"📂 **MASTER LOG:** {response.replace('MEM_SAVE:', '').strip()}")
-            await message.channel.send("✅ Information saved to Workflow Memory, Sir.")
+            await wf_ch.send(f"```python\n{info_to_save}\n```")
+            await message.channel.send(f"✅ Master, I have updated your identity files with: `{info_to_save}`")
         else:
             await message.channel.send(response)
 
@@ -43,4 +45,5 @@ if "active" not in st.session_state:
     st.session_state.active = True
     threading.Thread(target=run, daemon=True).start()
 
-st.title("🤖 Modular Jarvis: 2-Tier Memory")
+st.title("🤖 J.A.R.V.I.S. Modular OS")
+st.write("Memory Mode: **Metadata-Structured**")
