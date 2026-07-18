@@ -1,15 +1,15 @@
 import streamlit as st
 import discord
 from discord.ext import commands
-import os, asyncio, threading
-from intelligence import ask_groq
-from vault import get_permanent_metadata, get_recent_chat
+import os, asyncio, threading, json
+from intelligence import ask_jarvis_architect
+from vault import get_json_memory, update_json_memory
 
 # --- CONFIG ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
-WF_ID = int(os.environ.get("WORKFLOW_CH_ID"))
-TEMP_ID = int(os.environ.get("TEMP_CH_ID"))
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+REPO = os.environ.get("REPO_NAME")
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="", intents=intents)
@@ -19,20 +19,23 @@ async def on_message(message):
     if message.author == bot.user: return
     
     async with message.channel.typing():
-        # 1. READ: Cloud se structured memory nikalna
-        metadata = await get_permanent_metadata(bot, WF_ID)
-        recent_chat = await get_recent_chat(bot, TEMP_ID)
-        full_context = metadata + recent_chat
+        # 1. READ: GitHub se memory lana
+        current_mem, sha = get_json_memory(REPO, GITHUB_TOKEN)
         
-        # 2. THINK: Brain ko history bhenjna
-        response = ask_groq(message.content, full_context, GROQ_KEY)
+        # 2. THINK: Brain se jawab mangna
+        response = ask_jarvis_architect(message.content, current_mem, GROQ_KEY)
         
-        # 3. SAVE: Agar info save karni ho
-        if response.startswith("UPDATE_MEMORY:"):
-            info_to_save = response.replace("UPDATE_MEMORY:", "").strip()
-            wf_ch = bot.get_channel(WF_ID)
-            await wf_ch.send(f"```python\n{info_to_save}\n```")
-            await message.channel.send(f"✅ Master, I have updated your identity files with: `{info_to_save}`")
+        # 3. WRITE: Agar naya data save karna ho
+        if "###JSON_UPDATE###" in response:
+            parts = response.split("###JSON_UPDATE###")
+            reply_text = parts[0].strip()
+            try:
+                new_facts = json.loads(parts[1].strip())
+                current_mem["facts"].update(new_facts) # Memory update
+                update_json_memory(REPO, GITHUB_TOKEN, current_mem, sha)
+                await message.channel.send(f"{reply_text}\n\n✅ *Vault Updated*")
+            except:
+                await message.channel.send(parts[0])
         else:
             await message.channel.send(response)
 
@@ -41,9 +44,9 @@ def run():
     asyncio.set_event_loop(loop)
     bot.run(TOKEN)
 
-if "active" not in st.session_state:
-    st.session_state.active = True
+if "init" not in st.session_state:
+    st.session_state.init = True
     threading.Thread(target=run, daemon=True).start()
 
-st.title("🤖 J.A.R.V.I.S. Modular OS")
-st.write("Memory Mode: **Metadata-Structured**")
+st.title("🤖 J.A.R.V.I.S. Modular Brain")
+st.write("Memory Mode: **GitHub JSON Vault**")
