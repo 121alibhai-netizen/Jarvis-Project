@@ -1,4 +1,6 @@
 {
-    "facts": {},
+    "facts": {
+        "greeting": "hello"
+    },
     "history": []
 }
