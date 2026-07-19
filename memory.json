@@ -1,24 +1,4 @@
 {
-    "facts": {
-        "greeting": "hello",
-        "age": 18,
-        "favorite_colors": [
-            "red",
-            "black"
-        ],
-        "preferred_color": "black",
-        "facts": {
-            "greeting": "hello",
-            "age": 18,
-            "favorite_colors": [
-                "red",
-                "black"
-            ],
-            "preferred_color": "black"
-        },
-        "history": [],
-        "name": "unknown",
-        "role": "Senior AI Architect"
-    },
+    "facts": {},
     "history": []
 }
