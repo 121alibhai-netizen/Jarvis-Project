@@ -5,20 +5,15 @@ import os, asyncio, threading, json
 from intelligence import ask_jarvis_pro
 from vault import get_json_memory, update_json_memory
 
-# --- CONFIG FETCH ---
+# --- CONFIG ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 REPO = os.environ.get("REPO_NAME")
 
-# --- UI ---
-st.title("🤖 J.A.R.V.I.S. Core OS")
+if "bot_active" not in st.session_state:
+    st.session_state.bot_active = False
 
-if not TOKEN or not GROQ_KEY:
-    st.error("❌ ERROR: Tokens missing in Streamlit Secrets!")
-    st.stop()
-
-# --- DISCORD LOGIC ---
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -27,42 +22,46 @@ async def on_message(message):
     if message.author == bot.user: return
     
     async with message.channel.typing():
-        # 1. READ: GitHub JSON Memory
-        current_mem, sha = get_json_memory(REPO, GITHUB_TOKEN)
+        # 1. READ: Latest Memory from GitHub
+        current_mem, _ = get_json_memory(REPO, GITHUB_TOKEN)
         
-        # 2. THINK: Brain processing
+        # 2. THINK: Brain processes query + memory
         response = ask_jarvis_pro(message.content, current_mem, GROQ_KEY)
         
-        # 3. WRITE: Silent Memory Sync
+        # 3. SYNC: Update GitHub if needed
         if "###DATA_UPDATE###" in response:
             parts = response.split("###DATA_UPDATE###")
             answer = parts[0].strip()
-            try:
-                new_json = json.loads(parts[1].strip())
-                new_json["history"] = new_json.get("history", []) + [{"u": message.content, "j": answer}]
-                new_json["history"] = new_json["history"][-20:]
-                update_json_memory(REPO, GITHUB_TOKEN, new_json)
-            except: pass
+            new_json_str = parts[1].strip()
+            
+            if new_json_str != "NONE":
+                try:
+                    updated_mem = json.loads(new_json_str)
+                    # Add current chat to log (keeping only last 15)
+                    updated_mem["chat_log"] = updated_mem.get("chat_log", []) + [f"U: {message.content}", f"J: {answer}"]
+                    updated_mem["chat_log"] = updated_mem["chat_log"][-30:] # Limit history
+                    
+                    # Push to GitHub
+                    update_json_memory(REPO, GITHUB_TOKEN, updated_mem)
+                except: pass
+            
             await message.channel.send(answer)
         else:
             await message.channel.send(response)
 
-# --- SINGLETON RUNNER (Prevents Double Replies) ---
-def run():
+# --- BOOT ENGINE ---
+def run_bot():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    try:
-        bot.run(TOKEN)
-    except Exception as e:
-        print(f"Bot failed: {e}")
+    bot.run(TOKEN)
 
-if "bot_started" not in st.session_state:
-    st.session_state.bot_started = True
-    threading.Thread(target=run, daemon=True).start()
-    st.success("✅ Neural Soul Initialized.")
-else:
-    st.info("System is already running in background.")
+st.title("🤖 J.A.R.V.I.S. Senior OS")
 
-if st.sidebar.button("Hard Reboot"):
+if not st.session_state.bot_active:
+    st.session_state.bot_active = True
+    threading.Thread(target=run_bot, daemon=True).start()
+    st.success("✅ Neural Bridge Synchronized.")
+
+if st.sidebar.button("Hard System Reboot"):
     st.session_state.clear()
     st.rerun()
