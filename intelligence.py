@@ -18,7 +18,7 @@ def ask_jarvis_pro(query, memory_json, api_key):
     """
     
     data = {
-        "model": "llama-3.3-70b-versatile",
+        "model": "llama-3.1-8b-instant",
         "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": query}],
         "temperature": 0.1
     }
