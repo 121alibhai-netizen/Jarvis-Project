@@ -1,4 +1,13 @@
 {
-    "chat_log": [],
-    "master_protocols": {}
+    "chat_log": [
+        "U: \"Jarvis, listen. My name is Muhammad Ali. My daily workflow is: check mail, open VS Code, and start Groq. Save this as a master protocol.\"",
+        "J: Good day, Mr. Ali. I've taken note of your daily workflow. To confirm, your master protocol consists of the following steps: \n\n1. Check mail\n2. Open VS Code\n3. Start Groq\n\nI shall ensure that this protocol is saved for future reference."
+    ],
+    "master_protocols": {
+        "daily_workflow": [
+            "check mail",
+            "open VS Code",
+            "start Groq"
+        ]
+    }
 }
